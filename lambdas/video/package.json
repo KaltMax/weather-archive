@@ -1,0 +1,10 @@
+{
+  "name": "video",
+  "version": "1.0.0",
+  "description": "Lambda function to retrieve video URLs with Redis caching",
+  "main": "index.js",
+  "dependencies": {
+    "pg": "^8.11.3",
+    "redis": "^5.10.0"
+  }
+}

@@ -1,0 +1,255 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Weather Archive
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 10
+    MemorySize: 256
+    Environment:
+      Variables:
+        DB_HOST: db-weather-archive.cjkoc6mcccjq.us-east-1.rds.amazonaws.com
+        DB_PORT: 5432
+        DB_NAME: postgres
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+        REDIS_HOST: redis-18058.c9.us-east-1-4.ec2.cloud.redislabs.com
+        REDIS_PORT: 18058
+        REDIS_PASSWORD: sASSVyRro1ityOqU32y50DJM2rB0BoJ1
+        S3_FRONTEND_BUCKET: weather-archive-s3
+        S3_RAW_IMAGES_BUCKET: weather-archive-raw-images
+        S3_PROCESSED_IMAGES_BUCKET: weather-archive-processed-images
+        S3_VIDEOS_BUCKET: weather-archive-videos
+  Api:
+    Cors:
+      AllowMethods: "'GET,POST,OPTIONS'"
+      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      AllowOrigin: "'*'"
+
+Resources:
+  # Health Check Lambda
+  HealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-health
+      CodeUri: ../lambdas/health/
+      Handler: index.handler
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Events:
+        GetHealth:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: GET
+
+  # Autocomplete Lambda
+  AutocompleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-autocomplete
+      CodeUri: ../lambdas/cities/
+      Handler: index.handler
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Events:
+        GetCities:
+          Type: Api
+          Properties:
+            Path: /cities
+            Method: GET
+            Auth:
+              ApiKeyRequired: true
+
+  # Get Weather Data Lambda
+  GetWeatherDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-get-weather-data
+      CodeUri: ../lambdas/weather-data/
+      Handler: index.handler
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Events:
+        GetWeatherData:
+          Type: Api
+          Properties:
+            Path: /weather/{city}
+            Method: GET
+            Auth:
+              ApiKeyRequired: true
+
+  # Get Video Lambda
+  GetVideoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-get-video
+      CodeUri: ../lambdas/video/
+      Handler: index.handler
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Events:
+        GetVideo:
+          Type: Api
+          Properties:
+            Path: /video/{city}
+            Method: GET
+            Auth:
+              ApiKeyRequired: true
+
+  # Post Weather Data Lambda (Webcam Upload)
+  PostWeatherDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-post-data
+      CodeUri: ../lambdas/data/
+      Handler: index.handler
+      Timeout: 30
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Events:
+        PostData:
+          Type: Api
+          Properties:
+            Path: /data
+            Method: POST
+            Auth:
+              ApiKeyRequired: true
+
+  # Picture Service Lambda (Image Compression)
+  PictureServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-picture-service
+      CodeUri: ../lambdas/picture-service/
+      Handler: index.handler
+      Timeout: 60
+      MemorySize: 1024
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+
+  # Video Service Lambda (Scheduled Video Generation)
+  VideoServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-video-service
+      CodeUri: ../lambdas/video-service/
+      Handler: index.handler
+      Timeout: 900
+      MemorySize: 3008
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 hour)
+
+  # S3 Buckets - COMMENTED OUT FOR LEARNERS LAB (need to be created manually)
+  # Bucket 1: Frontend Static Files
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: weather-archive-s3
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - '*'
+            AllowedMethods:
+              - GET
+            AllowedHeaders:
+              - '*'
+            MaxAge: 3000
+
+  # Bucket 2: Raw Webcam Images (Trigger Point)
+  # IMPORTANT: After creating manually, configure S3 Event Notification:
+  # Event: s3:ObjectCreated:* -> Lambda: weather-archive-sam-picture-service
+  RawImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: weather-archive-raw-images
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt PictureServiceFunction.Arn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - '*'
+            AllowedMethods:
+              - PUT
+              - POST
+            AllowedHeaders:
+              - '*'
+            MaxAge: 3000
+
+  # # Bucket 3: Processed Images
+  ProcessedImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: weather-archive-processed-images
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # Bucket 4: Generated Videos
+  VideosBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: weather-archive-videos
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - '*'
+            AllowedMethods:
+              - GET
+            AllowedHeaders:
+              - '*'
+            MaxAge: 3000
+
+  # Permission for S3 to invoke PictureService Lambda
+  PictureServiceInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PictureServiceFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: arn:aws:s3:::weather-archive-raw-images
+      SourceAccount: !Ref AWS::AccountId
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/
+
+  HealthEndpoint:
+    Description: Health check endpoint
+    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/health
+
+  # S3 Bucket outputs - buckets created manually
+  FrontendBucketName:
+    Description: S3 Bucket for frontend static files
+    Value: weather-archive-s3
+
+  RawImagesBucketName:
+    Description: S3 Bucket for raw webcam images
+    Value: weather-archive-raw-images
+
+  ProcessedImagesBucketName:
+    Description: S3 Bucket for processed images
+    Value: weather-archive-processed-images
+
+  VideosBucketName:
+    Description: S3 Bucket for generated videos
+    Value: weather-archive-videos

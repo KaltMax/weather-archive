@@ -1,0 +1,45 @@
+# =============================================================================
+# Weather Archive - Terraform Variables Example
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in your values.
+# IMPORTANT: Never commit terraform.tfvars to version control!
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# General Configuration
+# -----------------------------------------------------------------------------
+
+stack_name   = "weather-archive-terraform"
+environment  = "dev"  # Options: dev, staging, production
+aws_region   = "us-east-1"
+
+# -----------------------------------------------------------------------------
+# S3 Bucket Configuration
+# -----------------------------------------------------------------------------
+# S3 bucket names must be globally unique! Add a unique suffix (e.g., your name or random string)
+
+s3_frontend_bucket         = "weather-archive-frontend-yourname"
+s3_raw_images_bucket       = "weather-archive-raw-images-yourname"
+s3_processed_images_bucket = "weather-archive-processed-images-yourname"
+s3_videos_bucket           = "weather-archive-videos-yourname"
+
+# -----------------------------------------------------------------------------
+# Database Configuration
+# -----------------------------------------------------------------------------
+# Terraform will create a new RDS PostgreSQL instance
+
+db_instance_class    = "db.t3.micro"
+db_allocated_storage = 20
+
+# Database credentials
+db_name     = "postgres"
+db_user     = "postgres"
+db_password = "your-secure-password-here"  # Change this!
+
+# -----------------------------------------------------------------------------
+# Redis Configuration (External Redis Cloud)
+# -----------------------------------------------------------------------------
+
+redis_host     = "redis-18058.c9.us-east-1-4.ec2.cloud.redislabs.com"
+redis_port     = 18058
+redis_password = "your-redis-password-here"  # Change this!
